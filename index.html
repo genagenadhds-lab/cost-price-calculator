@@ -33,16 +33,46 @@
   .big2 { font-size:24px; color:var(--accent2); }
   .err { color:var(--err); font-size:14px; min-height:0; }
   .err:not(:empty) { margin-top:10px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  select, .txt { font:inherit; font-size:16px; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:9px 10px; }
+  select { flex:1; min-width:160px; }
+  .txt { width:100%; }
+  button { font:inherit; font-size:14px; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:10px; padding:9px 12px; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--err); }
+  button.danger.armed { background:var(--err); border-color:var(--err); color:#fff; }
+  .note { color:var(--muted); font-size:13px; margin-top:10px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tr.cur td { font-weight:600; }
+  tr.clickable { cursor:pointer; }
 </style>
 </head>
 <body>
 <main>
   <h1>Калькулятор себестоимости</h1>
-  <p class="sub">Введите цифры — результат считается сразу.</p>
+  <p class="sub">Введите цифры — результат считается сразу и сохраняется на этом устройстве.</p>
+
+  <!-- ПРОДУКТЫ -->
+  <div class="card">
+    <label for="prodSel">Вид продукции</label>
+    <div class="bar">
+      <select id="prodSel"></select>
+      <button class="primary" id="btnAdd">+ Новый</button>
+      <button class="danger" id="btnDel">Удалить</button>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label for="prodName">Название</label>
+      <input class="txt" id="prodName" type="text" maxlength="60">
+    </div>
+    <div class="note" id="saveNote"></div>
+  </div>
 
   <!-- ЧАСТЬ 1 -->
   <h2><span class="n">1</span>Сырьевая себестоимость</h2>
-  <p class="sub">Сырьё, упаковка, этикетка и зарплата.</p>
+  <p class="sub">Сырьё, упаковка, этикетка и зарплата — свои для каждого вида продукции.</p>
   <div class="card">
     <div class="field">
       <label for="raw">Цена сырья</label>
@@ -85,7 +115,7 @@
 
   <!-- ЧАСТЬ 2 -->
   <h2 class="two"><span class="n">2</span>Себестоимость с учётом затрат</h2>
-  <p class="sub">Сырьевая себестоимость из части 1 плюс все остальные затраты цеха.</p>
+  <p class="sub">Сырьевая себестоимость из части 1 плюс расходы цеха. Расходы цеха общие для всех видов продукции.</p>
   <div class="card">
     <div class="field">
       <label for="rent">Аренда цеха в месяц</label>
@@ -113,65 +143,150 @@
     <div class="row"><span>Выпуск продукции в месяц</span><b id="rMonth">—</b></div>
     <div class="row"><span>Полная себестоимость 1 кг</span><b class="big2" id="rCost2">—</b></div>
   </div>
+
+  <!-- СРАВНЕНИЕ -->
+  <h2>Все виды продукции</h2>
+  <p class="sub">Нажмите на строку, чтобы открыть продукт.</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>Продукт</th><th class="num">Сырьевая</th><th class="num">Полная</th></tr></thead>
+      <tbody id="cmp"></tbody>
+    </table>
+  </div>
 </main>
 <script>
   const $ = id => document.getElementById(id);
-  const ids = ["raw","yield","pack","label","salary","workers","output","rent","power","indirect","shifts"];
+  const P_IDS = ["raw","yield","pack","label","salary","workers","output"];   // свои у каждого продукта
+  const W_IDS = ["rent","power","indirect","shifts"];                        // общие для цеха
   const fmt = n => n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽";
   const kg = n => n.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " кг";
-  const num = id => parseFloat(String($(id).value).replace(",", "."));
-  const val = id => num(id) || 0;
+  const toNum = v => parseFloat(String(v ?? "").replace(",", "."));
   const clear = list => list.forEach(o => $(o).textContent = "—");
-
   const out1 = ["rRaw","rPack","rLabel","rShift","rSal","rCost1"];
   const out2 = ["rCost1b","rRent","rPower","rInd","rMonth","rCost2"];
+  const KEY = "cost-calc-v2";
 
-  function calc() {
-    // Часть 1
-    const raw = num("raw"), y = num("yield"), outKg = num("output");
-    let m1 = "";
-    if (!(raw >= 0)) m1 = "Укажите цену сырья.";
-    else if (!(y > 0) || y > 150) m1 = "Выход должен быть больше 0 и не больше 150%.";
-    else if (!(outKg > 0)) m1 = "Укажите, сколько кг готовой продукции делаете за смену.";
-    $("err1").textContent = m1;
-    if (m1) { clear(out1); clear(out2); $("err2").textContent = "Сначала заполните часть 1."; return; }
+  const defaults = {};
+  [...P_IDS, ...W_IDS].forEach(id => defaults[id] = $(id).value);
+  const pickDefaults = ids => Object.fromEntries(ids.map(id => [id, defaults[id]]));
 
-    const rawKg = raw / (y / 100);
-    const packKg = val("pack");
-    const labelKg = val("label");
-    const shiftTotal = val("salary") * val("workers");
-    const salKg = shiftTotal / outKg;
-    const cost1 = rawKg + packKg + labelKg + salKg;
-
-    $("rRaw").textContent = fmt(rawKg);
-    $("rPack").textContent = fmt(packKg);
-    $("rLabel").textContent = fmt(labelKg);
-    $("rShift").textContent = fmt(shiftTotal);
-    $("rSal").textContent = fmt(salKg);
-    $("rCost1").textContent = fmt(cost1);
-
-    // Часть 2
-    const shifts = num("shifts");
-    const monthly = val("rent") + val("power") + val("indirect");
-    let m2 = "";
-    if (monthly > 0 && !(shifts > 0)) m2 = "Укажите, сколько смен в месяц работаете.";
-    $("err2").textContent = m2;
-    if (m2) { clear(out2); return; }
-
-    const monthKg = (shifts || 0) * outKg;
-    const perKg = v => v > 0 ? v / monthKg : 0;
-    const rentKg = perKg(val("rent")), powerKg = perKg(val("power")), indKg = perKg(val("indirect"));
-    const cost2 = cost1 + rentKg + powerKg + indKg;
-
-    $("rCost1b").textContent = fmt(cost1);
-    $("rRent").textContent = fmt(rentKg);
-    $("rPower").textContent = fmt(powerKg);
-    $("rInd").textContent = fmt(indKg);
-    $("rMonth").textContent = kg(monthKg);
-    $("rCost2").textContent = fmt(cost2);
+  // ---- хранение ----
+  let storageOk = true;
+  function load() {
+    try { const d = JSON.parse(localStorage.getItem(KEY)); if (d && Array.isArray(d.products) && d.products.length) return d; }
+    catch (e) { storageOk = false; }
+    return { products: [{ name: "Продукт 1", v: pickDefaults(P_IDS) }], current: 0, workshop: pickDefaults(W_IDS) };
   }
-  ids.forEach(id => $(id).addEventListener("input", calc));
-  calc();
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); storageOk = true; }
+    catch (e) { storageOk = false; }
+    $("saveNote").textContent = storageOk
+      ? "Данные сохраняются автоматически на этом устройстве и в этом браузере."
+      : "Сохранение недоступно в этом браузере — после закрытия данные пропадут.";
+  }
+  let state = load();
+  if (!(state.current >= 0 && state.current < state.products.length)) state.current = 0;
+  state.workshop = Object.assign(pickDefaults(W_IDS), state.workshop || {});
+
+  // ---- расчёт ----
+  function compute(v, w) {
+    const raw = toNum(v.raw), y = toNum(v.yield), outKg = toNum(v.output);
+    const g = x => toNum(x) || 0;
+    let e1 = "";
+    if (!(raw >= 0)) e1 = "Укажите цену сырья.";
+    else if (!(y > 0) || y > 150) e1 = "Выход должен быть больше 0 и не больше 150%.";
+    else if (!(outKg > 0)) e1 = "Укажите, сколько кг готовой продукции делаете за смену.";
+    if (e1) return { e1 };
+    const rawKg = raw / (y / 100), packKg = g(v.pack), labelKg = g(v.label);
+    const shiftTotal = g(v.salary) * g(v.workers), salKg = shiftTotal / outKg;
+    const cost1 = rawKg + packKg + labelKg + salKg;
+    const shifts = toNum(w.shifts), monthly = g(w.rent) + g(w.power) + g(w.indirect);
+    if (monthly > 0 && !(shifts > 0)) return { cost1, rawKg, packKg, labelKg, shiftTotal, salKg, e2: "Укажите, сколько смен в месяц работаете." };
+    const monthKg = (shifts || 0) * outKg;
+    const per = x => g(x) > 0 ? g(x) / monthKg : 0;
+    const rentKg = per(w.rent), powerKg = per(w.power), indKg = per(w.indirect);
+    return { cost1, rawKg, packKg, labelKg, shiftTotal, salKg, rentKg, powerKg, indKg, monthKg, cost2: cost1 + rentKg + powerKg + indKg };
+  }
+
+  function render() {
+    const cur = state.products[state.current];
+    const r = compute(cur.v, state.workshop);
+    $("err1").textContent = r.e1 || "";
+    if (r.e1) { clear(out1); clear(out2); $("err2").textContent = "Сначала заполните часть 1."; }
+    else {
+      $("rRaw").textContent = fmt(r.rawKg); $("rPack").textContent = fmt(r.packKg); $("rLabel").textContent = fmt(r.labelKg);
+      $("rShift").textContent = fmt(r.shiftTotal); $("rSal").textContent = fmt(r.salKg); $("rCost1").textContent = fmt(r.cost1);
+      $("err2").textContent = r.e2 || "";
+      if (r.e2) clear(out2);
+      else {
+        $("rCost1b").textContent = fmt(r.cost1); $("rRent").textContent = fmt(r.rentKg); $("rPower").textContent = fmt(r.powerKg);
+        $("rInd").textContent = fmt(r.indKg); $("rMonth").textContent = kg(r.monthKg); $("rCost2").textContent = fmt(r.cost2);
+      }
+    }
+    renderCompare();
+  }
+
+  function renderCompare() {
+    const tb = $("cmp"); tb.innerHTML = "";
+    state.products.forEach((p, i) => {
+      const r = compute(p.v, state.workshop);
+      const tr = document.createElement("tr");
+      tr.className = "clickable" + (i === state.current ? " cur" : "");
+      const td = (t, c) => { const x = document.createElement("td"); x.textContent = t; if (c) x.className = c; tr.appendChild(x); };
+      td(p.name || "Без названия");
+      td(r.e1 ? "—" : fmt(r.cost1), "num");
+      td(r.e1 || r.e2 ? "—" : fmt(r.cost2), "num");
+      tr.onclick = () => { state.current = i; fillForm(); save(); render(); };
+      tb.appendChild(tr);
+    });
+  }
+
+  function renderSelect() {
+    const sel = $("prodSel"); sel.innerHTML = "";
+    state.products.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p.name || "Без названия"; sel.appendChild(o); });
+    sel.value = state.current;
+    $("btnDel").disabled = state.products.length < 2;
+  }
+
+  function fillForm() {
+    const cur = state.products[state.current];
+    P_IDS.forEach(id => $(id).value = cur.v[id] ?? "");
+    W_IDS.forEach(id => $(id).value = state.workshop[id] ?? "");
+    $("prodName").value = cur.name;
+    renderSelect(); disarm();
+  }
+
+  // ---- события ----
+  P_IDS.forEach(id => $(id).addEventListener("input", () => { state.products[state.current].v[id] = $(id).value; save(); render(); }));
+  W_IDS.forEach(id => $(id).addEventListener("input", () => { state.workshop[id] = $(id).value; save(); render(); }));
+  $("prodName").addEventListener("input", () => {
+    state.products[state.current].name = $("prodName").value;
+    $("prodSel").options[state.current].textContent = $("prodName").value || "Без названия";
+    save(); renderCompare();
+  });
+  $("prodSel").addEventListener("change", () => { state.current = +$("prodSel").value; fillForm(); save(); render(); });
+  $("btnAdd").addEventListener("click", () => {
+    const base = state.products[state.current].v;
+    state.products.push({ name: "Продукт " + (state.products.length + 1), v: Object.assign({}, base) });
+    state.current = state.products.length - 1;
+    fillForm(); save(); render();
+    $("prodName").focus(); $("prodName").select();
+  });
+  let armTimer = null;
+  function disarm() { const b = $("btnDel"); b.classList.remove("armed"); b.textContent = "Удалить"; clearTimeout(armTimer); }
+  $("btnDel").addEventListener("click", () => {
+    const b = $("btnDel");
+    if (state.products.length < 2) return;
+    if (!b.classList.contains("armed")) {
+      b.classList.add("armed"); b.textContent = "Точно удалить?";
+      armTimer = setTimeout(disarm, 4000); return;
+    }
+    state.products.splice(state.current, 1);
+    state.current = Math.max(0, state.current - 1);
+    fillForm(); save(); render();
+  });
+
+  fillForm(); save(); render();
 </script>
 </body>
 </html>
