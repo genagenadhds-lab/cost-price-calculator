@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Калькулятор себестоимости</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#6b7280; --accent:#1f6feb; --accent2:#0f8a5f; --line:#e5e7eb; --err:#c62828; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171c; --card:#1d2128; --text:#e8eaed; --muted:#9aa0a6; --accent:#5b9dff; --accent2:#3ecf8e; --line:#2c313a; --err:#ff6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:560px; margin:0 auto; padding:24px 16px 40px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:18px; margin:28px 0 4px; display:flex; align-items:center; gap:10px; }
+  h2 .n { display:inline-flex; width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; align-items:center; justify-content:center; font-size:15px; }
+  h2.two .n { background:var(--accent2); }
+  p.sub { margin:0 0 14px; color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:12px; }
+  label { display:block; font-size:14px; margin:0 0 6px; }
+  small { color:var(--muted); }
+  .field { margin-bottom:14px; }
+  .field:last-child { margin-bottom:0; }
+  .inp { display:flex; align-items:center; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--bg); }
+  .inp input { flex:1; border:0; background:transparent; color:var(--text); font-size:18px; padding:10px 12px; min-width:0; outline:none; }
+  .inp span { padding:0 12px; color:var(--muted); font-size:14px; white-space:nowrap; }
+  .inp:focus-within { border-color:var(--accent); }
+  .row { display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:15px; }
+  .row:last-child { border-bottom:0; }
+  .row b { font-variant-numeric: tabular-nums; white-space:nowrap; }
+  .big { font-size:24px; color:var(--accent); }
+  .big2 { font-size:24px; color:var(--accent2); }
+  .err { color:var(--err); font-size:14px; min-height:0; }
+  .err:not(:empty) { margin-top:10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Калькулятор себестоимости</h1>
+  <p class="sub">Введите цифры — результат считается сразу.</p>
+
+  <!-- ЧАСТЬ 1 -->
+  <h2><span class="n">1</span>Сырьевая себестоимость</h2>
+  <p class="sub">Сырьё, упаковка, этикетка и зарплата.</p>
+  <div class="card">
+    <div class="field">
+      <label for="raw">Цена сырья</label>
+      <div class="inp"><input id="raw" type="number" inputmode="decimal" min="0" step="any" value="300"><span>₽ за кг</span></div>
+    </div>
+    <div class="field">
+      <label for="yield">Выход готовой продукции</label>
+      <div class="inp"><input id="yield" type="number" inputmode="decimal" min="0" max="150" step="any" value="60"><span>%</span></div>
+    </div>
+    <div class="field">
+      <label for="pack">Упаковка</label>
+      <div class="inp"><input id="pack" type="number" inputmode="decimal" min="0" step="any" value="20"><span>₽ на 1 кг готовой</span></div>
+    </div>
+    <div class="field">
+      <label for="label">Этикетки</label>
+      <div class="inp"><input id="label" type="number" inputmode="decimal" min="0" step="any" value="6"><span>₽ на 1 кг готовой</span></div>
+    </div>
+    <div class="field">
+      <label for="salary">Оплата одного работника за смену</label>
+      <div class="inp"><input id="salary" type="number" inputmode="decimal" min="0" step="any" value="3000"><span>₽ за смену</span></div>
+    </div>
+    <div class="field">
+      <label for="workers">Количество работников в смене</label>
+      <div class="inp"><input id="workers" type="number" inputmode="numeric" min="0" step="1" value="1"><span>чел.</span></div>
+    </div>
+    <div class="field">
+      <label for="output">Сколько готовой продукции делаем за смену</label>
+      <div class="inp"><input id="output" type="number" inputmode="decimal" min="0" step="any" value="100"><span>кг за смену</span></div>
+    </div>
+    <div class="err" id="err1"></div>
+  </div>
+  <div class="card">
+    <div class="row"><span>Сырьё на 1 кг готовой</span><b id="rRaw">—</b></div>
+    <div class="row"><span>Упаковка на 1 кг</span><b id="rPack">—</b></div>
+    <div class="row"><span>Этикетки на 1 кг</span><b id="rLabel">—</b></div>
+    <div class="row"><span>Зарплата всех за смену</span><b id="rShift">—</b></div>
+    <div class="row"><span>Зарплата на 1 кг</span><b id="rSal">—</b></div>
+    <div class="row"><span>Сырьевая себестоимость 1 кг</span><b class="big" id="rCost1">—</b></div>
+  </div>
+
+  <!-- ЧАСТЬ 2 -->
+  <h2 class="two"><span class="n">2</span>Себестоимость с учётом затрат</h2>
+  <p class="sub">Сырьевая себестоимость из части 1 плюс все остальные затраты цеха.</p>
+  <div class="card">
+    <div class="field">
+      <label for="rent">Аренда цеха в месяц</label>
+      <div class="inp"><input id="rent" type="number" inputmode="decimal" min="0" step="any" value="50000"><span>₽ в месяц</span></div>
+    </div>
+    <div class="field">
+      <label for="power">Электричество в месяц</label>
+      <div class="inp"><input id="power" type="number" inputmode="decimal" min="0" step="any" value="15000"><span>₽ в месяц</span></div>
+    </div>
+    <div class="field">
+      <label for="indirect">Прочие косвенные затраты в месяц<br><small>связь, бухгалтер, вода, вывоз отходов, ремонт оборудования и т.п.</small></label>
+      <div class="inp"><input id="indirect" type="number" inputmode="decimal" min="0" step="any" value="20000"><span>₽ в месяц</span></div>
+    </div>
+    <div class="field">
+      <label for="shifts">Сколько смен работаем в месяц</label>
+      <div class="inp"><input id="shifts" type="number" inputmode="numeric" min="0" step="1" value="22"><span>смен</span></div>
+    </div>
+    <div class="err" id="err2"></div>
+  </div>
+  <div class="card">
+    <div class="row"><span>Сырьевая себестоимость 1 кг (из части 1)</span><b id="rCost1b">—</b></div>
+    <div class="row"><span>Аренда на 1 кг</span><b id="rRent">—</b></div>
+    <div class="row"><span>Электричество на 1 кг</span><b id="rPower">—</b></div>
+    <div class="row"><span>Прочие косвенные на 1 кг</span><b id="rInd">—</b></div>
+    <div class="row"><span>Выпуск продукции в месяц</span><b id="rMonth">—</b></div>
+    <div class="row"><span>Полная себестоимость 1 кг</span><b class="big2" id="rCost2">—</b></div>
+  </div>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  const ids = ["raw","yield","pack","label","salary","workers","output","rent","power","indirect","shifts"];
+  const fmt = n => n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽";
+  const kg = n => n.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " кг";
+  const num = id => parseFloat(String($(id).value).replace(",", "."));
+  const val = id => num(id) || 0;
+  const clear = list => list.forEach(o => $(o).textContent = "—");
+
+  const out1 = ["rRaw","rPack","rLabel","rShift","rSal","rCost1"];
+  const out2 = ["rCost1b","rRent","rPower","rInd","rMonth","rCost2"];
+
+  function calc() {
+    // Часть 1
+    const raw = num("raw"), y = num("yield"), outKg = num("output");
+    let m1 = "";
+    if (!(raw >= 0)) m1 = "Укажите цену сырья.";
+    else if (!(y > 0) || y > 150) m1 = "Выход должен быть больше 0 и не больше 150%.";
+    else if (!(outKg > 0)) m1 = "Укажите, сколько кг готовой продукции делаете за смену.";
+    $("err1").textContent = m1;
+    if (m1) { clear(out1); clear(out2); $("err2").textContent = "Сначала заполните часть 1."; return; }
+
+    const rawKg = raw / (y / 100);
+    const packKg = val("pack");
+    const labelKg = val("label");
+    const shiftTotal = val("salary") * val("workers");
+    const salKg = shiftTotal / outKg;
+    const cost1 = rawKg + packKg + labelKg + salKg;
+
+    $("rRaw").textContent = fmt(rawKg);
+    $("rPack").textContent = fmt(packKg);
+    $("rLabel").textContent = fmt(labelKg);
+    $("rShift").textContent = fmt(shiftTotal);
+    $("rSal").textContent = fmt(salKg);
+    $("rCost1").textContent = fmt(cost1);
+
+    // Часть 2
+    const shifts = num("shifts");
+    const monthly = val("rent") + val("power") + val("indirect");
+    let m2 = "";
+    if (monthly > 0 && !(shifts > 0)) m2 = "Укажите, сколько смен в месяц работаете.";
+    $("err2").textContent = m2;
+    if (m2) { clear(out2); return; }
+
+    const monthKg = (shifts || 0) * outKg;
+    const perKg = v => v > 0 ? v / monthKg : 0;
+    const rentKg = perKg(val("rent")), powerKg = perKg(val("power")), indKg = perKg(val("indirect"));
+    const cost2 = cost1 + rentKg + powerKg + indKg;
+
+    $("rCost1b").textContent = fmt(cost1);
+    $("rRent").textContent = fmt(rentKg);
+    $("rPower").textContent = fmt(powerKg);
+    $("rInd").textContent = fmt(indKg);
+    $("rMonth").textContent = kg(monthKg);
+    $("rCost2").textContent = fmt(cost2);
+  }
+  ids.forEach(id => $(id).addEventListener("input", calc));
+  calc();
+</script>
+</body>
+</html>
